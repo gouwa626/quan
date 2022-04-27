@@ -2385,7 +2385,8 @@
   
   function getUrl() {
     const userHash = $.getdata($.userHash);
-    return `https://my.ruanmei.com/api/usersign/sign?userHash=${userHash}&type=4&timestamp=${now}&${gnekk()}=${geKsk()}`;
+    // return `https://my.ruanmei.com/api/usersign/sign?userHash=${userHash}&type=4&timestamp=${now}&${gnekk()}=${geKsk()}`;
+    return `https://my.ruanmei.com/api/usersign/yunrilisign?userHash=${userHash}&coinHistoryType=159`;
   }
   
   // prettier-ignore
