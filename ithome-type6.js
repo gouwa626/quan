@@ -47,19 +47,26 @@ const signTypeArr = [
   //   code.forEach(async (val) => {
   //     await sign(val);
   //   });
-  signTypeArr.map(async (item)=>{
-    await sign(item.type);
-    await signinfo(item.type);
-    await showmsg();
-  })
+
+
+  await processSignTypes();
 })()
     .catch((e) => $.logErr(e))
     .finally(() => $.done());
 
-function sign() {
+async function processSignTypes() {
+  for (const item of signTypeArr) {
+    await sign(item.type);
+    await signinfo(item.type);
+    await showmsg();
+    console.log(new Date().getTime());
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+}
+function sign(type) {
   return new Promise((resolve) => {
     const url = {
-      url: getUrl(),
+      url: getUrl(type),
       headers: {
         Host: "my.ruanmei.com",
         "User-Agent":
