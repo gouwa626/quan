@@ -58,7 +58,7 @@ async function processSignTypes() {
   for (const item of signTypeArr) {
     await sign(item.type);
     await signinfo(item.type);
-    await showmsg();
+    await showmsg(item.name);
     console.log(new Date().getTime());
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
@@ -125,7 +125,7 @@ function encrypt(str) {
   ).toString($.CryptoJS.enc.Hex);
 }
 
-function showmsg() {
+function showmsg(name) {
   return new Promise((resolve) => {
     $.subt = `签到:${$.result}`;
     $.desc = [];
@@ -134,7 +134,8 @@ function showmsg() {
           `连续:${$.signinfo.cdays}天,累计:${$.signinfo.mdays}天,金币:${$.signinfo.totalcoin}个`
       );
     }
-    $.msg($.name, $.subt, $.desc.join("\n"));
+    // $.msg($.name, $.subt, $.desc.join("\n"));
+    $.msg(name, $.subt, $.desc.join("\n"));
     resolve();
   });
 }
