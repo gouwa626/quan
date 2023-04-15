@@ -24,23 +24,26 @@ const code = [
 const now = new Date().getTime();
 $.arr = [];
 $.result = "";
-$.userAgent = "ITHomeClient/8.62 (iPhone; iOS 16.4.1; Scale/3.00)"
 const signTypeArr = [
   {
     type:0,
-    name:'IT之家'
+    name:'IT之家',
+    ua: "ITHomeClient/8.62 (iPhone; iOS 16.4.1; Scale/3.00)"
   },
   {
     type:1,
-    name:'辣品'
+    name:'辣品',
+    ua: "LaPin/7 CFNetwork/1406.0.4 Darwin/22.4.0"
   },
   {
     type:2,
-    name:'云日历'
+    name:'云日历',
+    ua: "yun ri li/1.26 (iPhone; iOS 16.4.1; Scale/3.00)"
   },
   {
     type:3,
-    name:'最会买'
+    name:'最会买',
+    ua: "Zuihuimai/1.50 (iPhone; iOS 16.4.1; Scale/3.00)"
   },
 ]
 !(async () => {
@@ -55,19 +58,19 @@ const signTypeArr = [
 
 async function processSignTypes() {
   for (const item of signTypeArr) {
-    await sign(item.type);
-    await signinfo(item.type);
+    await sign(item);
+    await signinfo(item);
     await showmsg(item.name);
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 }
-function sign(type) {
+function sign(item) {
   return new Promise((resolve) => {
     const url = {
-      url: getUrl(type),
+      url: getUrl(item.type),
       headers: {
         Host: "my.ruanmei.com",
-        "User-Agent": $.userAgent
+        "User-Agent": item.ua
       },
     };
     $.get(url, (err, resp, data) => {
@@ -90,14 +93,14 @@ function sign(type) {
   });
 }
 
-function signinfo(type) {
+function signinfo(item) {
   return new Promise((resolve) => {
     const userHash = $.getdata($.userHash);
     const url = {
-      url: `https://my.ruanmei.com/api/usersign/getsigninfo?userHash=${userHash}&type=${type}`,
+      url: `https://my.ruanmei.com/api/usersign/getsigninfo?userHash=${userHash}&type=${item.type}`,
       headers: {},
     };
-    url.headers["User-Agent"] = $.userAgent;
+    url.headers["User-Agent"] = item.ua;
     $.get(url, (err, resp, data) => {
       try {
         $.signinfo = JSON.parse(data);
