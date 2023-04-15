@@ -134,7 +134,7 @@ function showmsg(name) {
       );
     }
     // $.msg($.name, $.subt, $.desc.join("\n"));
-    $.msg(`${$.name}:${name}`, $.subt, $.desc.join("\n"));
+    $.msg(`${$.name}: ${name}`, $.subt, $.desc.join("\n"));
     resolve();
   });
 }
