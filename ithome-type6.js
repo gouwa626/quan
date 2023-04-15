@@ -47,8 +47,6 @@ const signTypeArr = [
   //   code.forEach(async (val) => {
   //     await sign(val);
   //   });
-
-
   await processSignTypes();
 })()
     .catch((e) => $.logErr(e))
@@ -59,7 +57,6 @@ async function processSignTypes() {
     await sign(item.type);
     await signinfo(item.type);
     await showmsg(item.name);
-    console.log(new Date().getTime());
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 }
@@ -135,7 +132,7 @@ function showmsg(name) {
       );
     }
     // $.msg($.name, $.subt, $.desc.join("\n"));
-    $.msg(name, $.subt, $.desc.join("\n"));
+    $.msg(`${$.name}:${name}`, $.subt, $.desc.join("\n"));
     resolve();
   });
 }
