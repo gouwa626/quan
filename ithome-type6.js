@@ -24,6 +24,7 @@ const code = [
 const now = new Date().getTime();
 $.arr = [];
 $.result = "";
+$.userAgent = "ITHomeClient/8.62 (iPhone; iOS 16.4.1; Scale/3.00)"
 const signTypeArr = [
   {
     type:0,
@@ -66,8 +67,7 @@ function sign(type) {
       url: getUrl(type),
       headers: {
         Host: "my.ruanmei.com",
-        "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 ithome/rmsdklevel2/day/7.63",
+        "User-Agent": $.userAgent
       },
     };
     $.get(url, (err, resp, data) => {
@@ -97,8 +97,7 @@ function signinfo(type) {
       url: `https://my.ruanmei.com/api/usersign/getsigninfo?userHash=${userHash}&type=${type}`,
       headers: {},
     };
-    url.headers["User-Agent"] =
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 ithome/rmsdklevel2/day/7.32";
+    url.headers["User-Agent"] = $.userAgent;
     $.get(url, (err, resp, data) => {
       try {
         $.signinfo = JSON.parse(data);
