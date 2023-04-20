@@ -25,7 +25,7 @@ const $ = new Env("日历提醒");
 function showmsg(name) {
     return new Promise((resolve) => {
         // $.msg($.name, $.subt, $.desc.join("\n"));
-        $.msg(name);
+        $.msg($.name,name);
         resolve();
     });
 }
