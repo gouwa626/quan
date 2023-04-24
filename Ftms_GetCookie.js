@@ -1,4 +1,4 @@
-const $ = ENV('一汽丰田获取Cookies');
+const $ = API('一汽丰田获取Cookies',true);
 const url = `https://community.ftms.com.cn/superapp/newcommunity/wt/getUserInfo?showTag=1&userId=1997983`;
 if($.isRequest){
     getCookie()
