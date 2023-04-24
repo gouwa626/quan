@@ -1,6 +1,6 @@
 const $ = ENV('一汽丰田获取Cookies');
 const url = `https://community.ftms.com.cn/superapp/newcommunity/wt/getUserInfo?showTag=1&userId=1997983`;
-if($.env.isRequest){
+if($.isRequest){
     getCookie()
 }
 function getCookie(){
