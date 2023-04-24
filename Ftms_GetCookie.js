@@ -6,7 +6,7 @@ if($.env.isRequest){
 function getCookie(){
     const CK = $request.headers['token']
     if (CK) {
-        $.write(CK, "COOKIE");
+        $.write(CK, "yqft_token");
         $.info(`吾爱破解\n写入Cookie成功 🎉`)
     } else {
         $.info(`吾爱破解\n写入Cookie失败, 关键值缺失`)
