@@ -61,7 +61,7 @@ async function processSignTypes() {
     await sign(item);
     await signinfo(item);
     await showmsg(item.name);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
 }
 function sign(item) {
@@ -95,7 +95,7 @@ function sign(item) {
 
 function signinfo(item) {
   return new Promise((resolve) => {
-    const userHash = $.getdata($.userHash);
+    const userHash = $.isNode() ? process.env[$.userHash] : $.getdata($.userHash);
     const url = {
       url: `https://my.ruanmei.com/api/usersign/getsigninfo?userHash=${userHash}&type=${item.type}`,
       headers: {},
@@ -166,33 +166,33 @@ function gekk(S) {
 }
 
 function gnekk() {
-  const base = CryptoJS.TripleDES.encrypt(
-      CryptoJS.enc.Utf8.parse(gekk(3)),
-      CryptoJS.enc.Utf8.parse(gekk(8)),
+  const base = $.CryptoJS.TripleDES.encrypt(
+      $.CryptoJS.enc.Utf8.parse(gekk(3)),
+      $.CryptoJS.enc.Utf8.parse(gekk(8)),
       {
-        mode: CryptoJS.mode.ECB, // 加密模式
-        padding: CryptoJS.pad.ZeroPadding,
+        mode: $.CryptoJS.mode.ECB, // 加密模式
+        padding: $.CryptoJS.pad.ZeroPadding,
       }
   ).toString();
-  const text = "k" + CryptoJS.enc.Base64.parse(base).toString(CryptoJS.enc.Hex);
+  const text = "k" + $.CryptoJS.enc.Base64.parse(base).toString($.CryptoJS.enc.Hex);
   return text;
 }
 
 function geKsk() {
-  const base = CryptoJS.TripleDES.encrypt(
-      CryptoJS.enc.Utf8.parse($.time("yyyy-MM-dd HH:mm:ss", now)),
-      CryptoJS.enc.Utf8.parse(gekk(8)),
+  const base = $.CryptoJS.TripleDES.encrypt(
+      $.CryptoJS.enc.Utf8.parse($.time("yyyy-MM-dd HH:mm:ss", now)),
+      $.CryptoJS.enc.Utf8.parse(gekk(8)),
       {
-        mode: CryptoJS.mode.ECB, // 加密模式
-        padding: CryptoJS.pad.ZeroPadding,
+        mode: $.CryptoJS.mode.ECB, // 加密模式
+        padding: $.CryptoJS.pad.ZeroPadding,
       }
   ).toString();
-  const text = CryptoJS.enc.Base64.parse(base).toString(CryptoJS.enc.Hex);
+  const text = $.CryptoJS.enc.Base64.parse(base).toString($.CryptoJS.enc.Hex);
   return text;
 }
 
 function getUrl(type) {
-  const userHash = $.getdata($.userHash);
+  const userHash = $.isNode() ? process.env[$.userHash] : $.getdata($.userHash);
   return `https://my.ruanmei.com/api/usersign/sign?userHash=${userHash}&type=${type}&timestamp=${now}&${gnekk()}=${geKsk()}`;
 }
 
