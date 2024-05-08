@@ -30,21 +30,21 @@ const signTypeArr = [
     name:'IT之家',
     ua: "ITHomeClient/8.62 (iPhone; iOS 16.4.1; Scale/3.00)"
   },
-  {
-    type:1,
-    name:'辣品',
-    ua: "LaPin/7 CFNetwork/1406.0.4 Darwin/22.4.0"
-  },
-  {
-    type:2,
-    name:'云日历',
-    ua: "yun ri li/1.26 (iPhone; iOS 16.4.1; Scale/3.00)"
-  },
-  {
-    type:3,
-    name:'最会买',
-    ua: "Zuihuimai/1.50 (iPhone; iOS 16.4.1; Scale/3.00)"
-  },
+  // {
+  //   type:1,
+  //   name:'辣品',
+  //   ua: "LaPin/7 CFNetwork/1406.0.4 Darwin/22.4.0"
+  // },
+  // {
+  //   type:2,
+  //   name:'云日历',
+  //   ua: "yun ri li/1.26 (iPhone; iOS 16.4.1; Scale/3.00)"
+  // },
+  // {
+  //   type:3,
+  //   name:'最会买',
+  //   ua: "Zuihuimai/1.50 (iPhone; iOS 16.4.1; Scale/3.00)"
+  // },
 ]
 !(async () => {
   $.CryptoJS = $.isNode() ? require("crypto-js") : CryptoJS;
