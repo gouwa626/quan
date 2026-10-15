@@ -1,21 +1,23 @@
 // ============================================================
-// 京东APP · 商品详情页比价注入（查表版）
-// 目标接口: https://api.m.jd.com/client.action?functionId=wareBusiness
+// 京东APP · 商品详情页比价（查表版）
+// 目标接口: https://api.m.jd.com/client.action?functionId=sku_interp_title
 //
 // 背景（抓包实证，2026-10-15）：
-//   慢慢买 priceRemark 接口返回完整比价（历史最低/当前价位置/购买建议），
-//   但其 sign/token 与具体请求参数绑定——实测改动任一字段即返回
-//   token校验失败，且需要 App 动态签名。因此脚本无法"现开现算"。
-//   结论：改用【按 skuId 查表】。每盯一个商品，抓一次慢慢买响应，
-//   把比价摘要固化到下方 TRACKED 即可，无需签名/Cookie。
+//   1. 京东核心商品接口（带价格那个，wareBusiness 等）做了 SSL 证书固定，
+//      抓包完全看不到明文 → 原生价格响应无法注入。
+//   2. 但进详情页时 sku_interp_title（AI 标题解读）这条请求【未固定、抓得到】，
+//      且响应里嵌套着 skuId：data[].ai_info[].sku_list[].skuId（顶层也有 ai_info）。
+//   3. 慢慢买 priceRemark 的 sign/token 与请求参数绑定，无法现算任意商品，
+//      故用【按 skuId 查表】。每盯一个商品，抓一次慢慢买响应，固化到 TRACKED。
 //
 // 流程：
-//   1. 拦截 wareBusiness 响应 → 取 skuId
-//   2. 在 TRACKED 命中 → 拼比价文案 → 注入响应 + 可选弹 QX 通知
+//   1. 拦截 sku_interp_title 响应 → 深层取出 skuId
+//   2. TRACKED 命中 → 弹 QX 通知（必现）
+//       + 可选：把比价伪装成一条 AI 卡片塞进 ai_info，尝试渲染在标题下方
 //   3. 未命中 → 原样放行
 //
-// 订阅用法：QX → 订阅资源 → 填 raw 地址（见 jd-price.conf）
-// 临时关闭：在原 URL 后加 &__price=0
+// 订阅用法：QX → 重写(Rewrite) 订阅 → 填 conf raw 地址（见 jd-price.conf）
+// 临时关闭：URL 后加 &__price=0
 // ============================================================
 
 const CONFIG = {
@@ -39,20 +41,19 @@ const CONFIG = {
     },
   },
 
-  // 命中后是否弹 QX 通知（不依赖页面结构，必现）
+  // 命中后是否弹 QX 通知（不依赖页面渲染，必现）
   POST_NOTIFY: true,
 
-  // 注入到响应的字段名。默认空 = 只通知+日志，不改响应（避免破坏页面）。
-  // 要真正显示在详情页上，需要你抓一次京东详情页(wareBusiness)响应，
-  // 告诉我价格区块渲染的字段路径，我填这里。
-  INJECT_FIELD: "",
+  // 是否尝试把比价伪装成一条 AI 卡片塞进 ai_info（可能渲染在标题下方那节）。
+  // 若 APP 不接受改动的响应导致异常，改成 false 只留通知。
+  INJECT_AI: true,
 };
 
 function log() {
   console.log("[京东比价] " + Array.prototype.join.call(arguments, " "));
 }
 
-// 开关：URL 带 __price=0 时跳过（注意 QX 顶层不能用 return）
+// 开关：URL 带 __price=0 时跳过
 if (/[?&]__price=0/.test($request.url)) {
   log("检测到 __price=0，跳过比价");
   $done({});
@@ -74,9 +75,6 @@ function main() {
   var skuId = findSku(obj);
   log("顶层键: " + Object.keys(obj).join(",") + " | skuId=" + skuId);
 
-  // 诊断：打印含商品名的节点里所有字符串字段，用于定位"名称下方"的注入字段
-  diagnose(obj);
-
   if (!skuId || !CONFIG.TRACKED[skuId]) {
     log(skuId ? ("未收录该 sku(" + skuId + ")，放行") : "未取到 skuId，放行");
     $done({});
@@ -85,7 +83,7 @@ function main() {
 
   var item = CONFIG.TRACKED[skuId];
   var note = buildNote(item);
-  log(note);
+  log("命中 -> " + note);
 
   if (CONFIG.POST_NOTIFY) {
     try {
@@ -93,52 +91,64 @@ function main() {
     } catch (e) {}
   }
 
-  if (CONFIG.INJECT_FIELD) {
-    obj[CONFIG.INJECT_FIELD] = note;
+  var changed = false;
+  if (CONFIG.INJECT_AI) {
+    changed = injectAiCard(obj, skuId, note);
+  }
+
+  if (changed) {
     $done({ body: JSON.stringify(obj) });
   } else {
     $done({});
   }
 }
 
-// 从 wareBusiness 响应里尽力找 skuId（路径以实际抓包为准，先多试几个）
+// 从 sku_interp_title 响应里深层找 skuId
+// 结构：data[].ai_info[].sku_list[].skuId ；顶层 ai_info[].sku_list[].skuId
 function findSku(o) {
-  var paths = [
-    "wareInfo.skuId", "wareInfo.wareId", "data.wareInfo.skuId", "data.wareInfo.wareId",
-    "item.skuId", "skuId", "wareId", "sku", "basicInfo.skuId", "data.basicInfo.skuId",
-  ];
-  for (var i = 0; i < paths.length; i++) {
-    var v = getPath(o, paths[i]);
-    if (v !== undefined && v !== null && v !== "") return String(v);
-  }
-  return "";
+  var found = [];
+  collectSku(o, found);
+  return found.length ? found[0] : "";
 }
 
-function getPath(o, path) {
-  var parts = path.split(".");
-  var cur = o;
-  for (var i = 0; i < parts.length; i++) {
-    if (cur === null || typeof cur !== "object") return undefined;
-    cur = cur[parts[i]];
+function collectSku(o, out) {
+  if (o === null || typeof o !== "object") return;
+  if (Array.isArray(o)) {
+    for (var i = 0; i < o.length; i++) collectSku(o[i], out);
+    return;
   }
-  return cur;
+  for (var k in o) {
+    if (k === "skuId" && typeof o[k] === "string" && o[k]) out.push(o[k]);
+    else collectSku(o[k], out);
+  }
 }
 
-// 诊断：定位含商品名的节点，打印其所有字符串字段（名称下方那行大概率在其中）
-function diagnose(o) {
-  var node = null;
-  var known = ["wareInfo", "basicInfo", "item", "data"];
-  for (var i = 0; i < known.length; i++) {
-    var c = getPath(o, known[i]);
-    if (c && typeof c === "object" && (c.name || c.skuName || c.goodsName)) { node = c; break; }
+// 把比价伪装成一条 AI 卡片，塞进 data[] 和 ai_info[]
+function injectAiCard(obj, skuId, note) {
+  var card = {
+    "dongdong": "0",
+    "sku_list": [{ "storeId": "", "skuId": skuId }],
+    "channel": "30",
+    "content": note,
+  };
+  var entry = { "name": "慢慢买 · 历史比价", "ai_info": [card] };
+  var did = false;
+
+  if (Array.isArray(obj.data)) {
+    // 每个 data 元素的 ai_info 也追加，增大被渲染的几率
+    for (var i = 0; i < obj.data.length; i++) {
+      var d = obj.data[i];
+      if (d && Array.isArray(d.ai_info)) { d.ai_info.push(card); did = true; }
+    }
+    obj.data.push(entry);
+    did = true;
   }
-  if (!node) node = o;
-  var str = {};
-  Object.keys(node).forEach(function (k) {
-    var v = node[k];
-    if (typeof v === "string") str[k] = v.length > 50 ? v.slice(0, 50) + "…" : v;
-  });
-  log("诊断: " + (node === o ? "顶层" : "商品节点") + " 字符串字段 = " + JSON.stringify(str));
+  if (Array.isArray(obj.ai_info)) {
+    obj.ai_info.push(card);
+    did = true;
+  }
+  if (did) log("已注入 AI 卡片（名称下方那节）");
+  return did;
 }
 
 // 拼比价文案
