@@ -53,6 +53,10 @@ const CONFIG = {
 
   // 同一商品两次动作的最小间隔（毫秒），防重复弹/重复插卡片
   DEDUP_MS: 60000,
+
+  // 调试模式：只要进了商品详情页就弹一条通知，显示当前 sku。
+  // 用于先把"当前在看哪个商品"链路打通（比价数据后续再喂 TRACKED）。
+  DEBUG_NOTIFY_DETAIL: true,
 };
 
 function log() {
@@ -78,47 +82,58 @@ function main() {
     return;
   }
 
-  var skuId = findSku(obj);
-  log("顶层键: " + Object.keys(obj).join(",") + " | skuId=" + skuId);
+  var trackedSku = findTrackedSku(obj);   // 是否含盯着的商品号（任意位置）
+  var currentSku = findSku(obj);          // 当前响应里能提取到的 sku（任意 skuId）
+  var isDetail = Array.isArray(obj.ai_info); // ai_info 存在 = 是详情页 AI 接口
 
-  if (!skuId || !CONFIG.TRACKED[skuId]) {
-    log(skuId ? ("未收录该 sku(" + skuId + ")，放行") : "未取到 skuId，放行");
+  log("顶层键: " + Object.keys(obj).join(",") + " | tracked=" + trackedSku +
+      " | current=" + currentSku + " | isDetail=" + isDetail);
+
+  // 情况一：命中了盯着的商品 → 弹完整比价 + 尝试注入卡片
+  if (trackedSku && CONFIG.TRACKED[trackedSku]) {
+    var item = CONFIG.TRACKED[trackedSku];
+    var note = buildNote(item);
+    if (!shouldAct("sku_" + trackedSku)) {
+      log("命中但 60s 内已处理过，跳过 (" + trackedSku + ")");
+      $done({});
+      return;
+    }
+    log("命中 -> " + note);
+    if (CONFIG.POST_NOTIFY) {
+      try {
+        $notification.post("京东比价 · " + item.currentPrice + "元", note, item.name || "");
+      } catch (e) {}
+    }
+    var changed = false;
+    if (CONFIG.INJECT_AI) changed = injectAiCard(obj, trackedSku, note);
+    $done(changed ? { body: JSON.stringify(obj) } : {});
+    return;
+  }
+
+  // 情况二：调试模式——进了详情页就弹一条，显示当前 sku（把"活"的链路打通）
+  if (CONFIG.DEBUG_NOTIFY_DETAIL && isDetail) {
+    var dk = "detail_" + (currentSku || "unknown");
+    if (!shouldAct(dk)) {
+      $done({});
+      return;
+    }
+    var title = "京东详情页";
+    var msg = currentSku ? ("当前商品 sku = " + currentSku) : "当前商品 sku 未知";
+    msg += "（比价数据待喂 TRACKED）";
+    log("调试通知 -> " + msg);
+    if (CONFIG.POST_NOTIFY) {
+      try { $notification.post(title, msg, "未收录，进详情页触达OK"); } catch (e) {}
+    }
     $done({});
     return;
   }
 
-  var item = CONFIG.TRACKED[skuId];
-  var note = buildNote(item);
-
-  // 60s 去重：同一商品短时间内不重复弹/重复插，避免 spam
-  if (!shouldAct(skuId)) {
-    log("命中但 60s 内已处理过，跳过 (" + skuId + ")");
-    $done({});
-    return;
-  }
-  log("命中 -> " + note);
-
-  if (CONFIG.POST_NOTIFY) {
-    try {
-      $notification.post("京东比价 · " + item.currentPrice + "元", note, item.name || "");
-    } catch (e) {}
-  }
-
-  var changed = false;
-  if (CONFIG.INJECT_AI) {
-    changed = injectAiCard(obj, skuId, note);
-  }
-
-  if (changed) {
-    $done({ body: JSON.stringify(obj) });
-  } else {
-    $done({});
-  }
+  $done({});
 }
 
-// 60s 去重：用 $prefs 持久化记录上次动作时间
-function shouldAct(skuId) {
-  var k = "jd_price_act_" + skuId;
+// 60s 去重：用 $prefs 持久化记录上次动作时间，按 key 区分
+function shouldAct(key) {
+  var k = "jd_price_act_" + key;
   var now = Date.now();
   try {
     var last = $prefs.get(k) ? parseInt($prefs.get(k)) : 0;
@@ -128,7 +143,32 @@ function shouldAct(skuId) {
   return true;
 }
 
-// 从响应里递归找 skuId（sku_interp_title 等在 data[].ai_info[].sku_list[].skuId 等深层）
+// 在整个响应里搜"TRACKED 里的 sku 值"是否出现在任何位置（任意键名/数组元素都算）
+// 不再依赖具体是 skuId/wareId/id 哪个键——只要响应带了盯着的商品号就命中
+function findTrackedSku(o) {
+  var tracked = Object.keys(CONFIG.TRACKED);
+  for (var t = 0; t < tracked.length; t++) {
+    if (containsSku(o, tracked[t])) return tracked[t];
+  }
+  return "";
+}
+
+function containsSku(o, sku) {
+  if (o === null || typeof o !== "object") return false;
+  if (Array.isArray(o)) {
+    for (var i = 0; i < o.length; i++) if (containsSku(o[i], sku)) return true;
+    return false;
+  }
+  for (var k in o) {
+    var v = o[k];
+    if (typeof v === "string" && v === sku) return true;
+    if (typeof v === "number" && String(v) === sku) return true;
+    if (typeof v === "object" && containsSku(v, sku)) return true;
+  }
+  return false;
+}
+
+// 旧：只找 skuId 键（保留备用）
 function findSku(o) {
   var found = [];
   collectSku(o, found);
