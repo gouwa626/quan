@@ -74,6 +74,9 @@ function main() {
   var skuId = findSku(obj);
   log("顶层键: " + Object.keys(obj).join(",") + " | skuId=" + skuId);
 
+  // 诊断：打印含商品名的节点里所有字符串字段，用于定位"名称下方"的注入字段
+  diagnose(obj);
+
   if (!skuId || !CONFIG.TRACKED[skuId]) {
     log(skuId ? ("未收录该 sku(" + skuId + ")，放行") : "未取到 skuId，放行");
     $done({});
@@ -119,6 +122,23 @@ function getPath(o, path) {
     cur = cur[parts[i]];
   }
   return cur;
+}
+
+// 诊断：定位含商品名的节点，打印其所有字符串字段（名称下方那行大概率在其中）
+function diagnose(o) {
+  var node = null;
+  var known = ["wareInfo", "basicInfo", "item", "data"];
+  for (var i = 0; i < known.length; i++) {
+    var c = getPath(o, known[i]);
+    if (c && typeof c === "object" && (c.name || c.skuName || c.goodsName)) { node = c; break; }
+  }
+  if (!node) node = o;
+  var str = {};
+  Object.keys(node).forEach(function (k) {
+    var v = node[k];
+    if (typeof v === "string") str[k] = v.length > 50 ? v.slice(0, 50) + "…" : v;
+  });
+  log("诊断: " + (node === o ? "顶层" : "商品节点") + " 字符串字段 = " + JSON.stringify(str));
 }
 
 // 拼比价文案
