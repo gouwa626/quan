@@ -1,33 +1,51 @@
 // ============================================================
-// 京东APP · 商品详情页比价注入
+// 京东APP · 商品详情页比价注入（查表版）
 // 目标接口: https://api.m.jd.com/client.action?functionId=wareBusiness
 //
-// 作用：抓商品详情页响应，取「当前价」+ 商品ID(skuId)，
-//       调慢慢买(manmanbuy.com)历史价格接口做对比，
-//       把比价结论写回响应字段，让页面展示。
+// 背景（抓包实证，2026-10-15）：
+//   慢慢买 priceRemark 接口返回完整比价（历史最低/当前价位置/购买建议），
+//   但其 sign/token 与具体请求参数绑定——实测改动任一字段即返回
+//   token校验失败，且需要 App 动态签名。因此脚本无法"现开现算"。
+//   结论：改用【按 skuId 查表】。每盯一个商品，抓一次慢慢买响应，
+//   把比价摘要固化到下方 TRACKED 即可，无需签名/Cookie。
 //
-// 依赖：
-//   · 慢慢买历史价格 → 需登录 Cookie（登录 manmanbuy.com 后复制整段）
-//   · 未配 Cookie 时降级为「安全模式」：只打日志，不注入
-//
-// 背景（抓包实证）：
-//   · wareBusiness 响应是 JSON；商品ID、当前价的取值路径以你实际抓包为准
-//     （下方已标 TODO）
-//   · 慢慢买按 skuId 查历史最低/最高/均价
+// 流程：
+//   1. 拦截 wareBusiness 响应 → 取 skuId
+//   2. 在 TRACKED 命中 → 拼比价文案 → 注入响应 + 可选弹 QX 通知
+//   3. 未命中 → 原样放行
 //
 // 订阅用法：QX → 订阅资源 → 填 raw 地址（见 jd-price.conf）
 // 临时关闭：在原 URL 后加 &__price=0
 // ============================================================
 
-// ── 配置区（订阅时可覆盖） ──
 const CONFIG = {
-  // 慢慢买 Cookie：登录 www.manmanbuy.com，浏览器开发者工具里复制整段
-  // "Cookie: xxx" 的 xxx 部分。留空 = 安全模式（不比价）。
-  MANMANBU_COOKIE: "",
+  // 每个想盯的商品一条：{ skuId: 摘要 }。数据来自慢慢买 priceRemark 响应。
+  TRACKED: {
+    "10081811486701": {
+      name: "外语/语言文字类目商品",
+      currentPrice: "59",
+      status: "持平常卖价",
+      lowestPrice: "52.5",
+      lowestDate: "2026-01-31",
+      lowPct: "16%",
+      advice: "价格偏高",
+      star: 1.0,
+      expectPrice: "52.5",
+      rows: [
+        { label: "当前价",  price: "¥59",  tip: "低于历史价中16%的时段" },
+        { label: "历史最低", price: "¥52.5", date: "2026-01-31", diff: "省6.5" },
+        { label: "双11价",  price: "¥52.7", date: "2025-10-24", diff: "省6.3" },
+      ],
+    },
+  },
 
-  // 慢慢买历史价格接口：形如 https://www.manmanbuy.com/xxx?skuId={skuId}
-  // TODO(待抓包确认): 用抓包工具抓一次比价请求，替换下面模板
-  PRICE_API_TEMPLATE: "https://www.manmanbuy.com/price?skuId=",
+  // 命中后是否弹 QX 通知（不依赖页面结构，必现）
+  POST_NOTIFY: true,
+
+  // 注入到响应的字段名。默认空 = 只通知+日志，不改响应（避免破坏页面）。
+  // 要真正显示在详情页上，需要你抓一次京东详情页(wareBusiness)响应，
+  // 告诉我价格区块渲染的字段路径，我填这里。
+  INJECT_FIELD: "",
 };
 
 function log() {
@@ -49,81 +67,74 @@ function main() {
     obj = JSON.parse(body);
   } catch (e) {
     log("响应不是 JSON：" + (e && e.message));
-    log("前 120 字符: " + String(body).substring(0, 120));
     $done({});
     return;
   }
 
-  // TODO(待抓包确认): 下面两行取值路径，按你抓到的 wareBusiness 实际结构改
-  var skuId = (obj.wareInfo && obj.wareInfo.skuId) || "";
-  var price = (obj.price && obj.price.price) || "";
+  var skuId = findSku(obj);
+  log("顶层键: " + Object.keys(obj).join(",") + " | skuId=" + skuId);
 
-  log("skuId=" + skuId + " 当前价=" + price);
-
-  if (!CONFIG.MANMANBU_COOKIE) {
-    log("未配置慢慢买 Cookie → 安全模式：仅记录当前价，不注入");
-    $done({});
-    return;
-  }
-  if (!skuId) {
-    log("未取到 skuId，无法比价");
+  if (!skuId || !CONFIG.TRACKED[skuId]) {
+    log(skuId ? ("未收录该 sku(" + skuId + ")，放行") : "未取到 skuId，放行");
     $done({});
     return;
   }
 
-  fetchHistoryPrice(skuId, function (hist) {
-    var note = buildNote(price, hist);
-    log(note);
+  var item = CONFIG.TRACKED[skuId];
+  var note = buildNote(item);
+  log(note);
 
-    // TODO(待抓包确认): 把 note 注入到页面会渲染的字段，例如：
-    //   obj.priceNote = note;  或 obj.wareInfo.xxx = note;
-    obj.priceNote = note;
+  if (CONFIG.POST_NOTIFY) {
+    try {
+      $notification.post("京东比价 · " + item.currentPrice + "元", note, item.name || "");
+    } catch (e) {}
+  }
 
+  if (CONFIG.INJECT_FIELD) {
+    obj[CONFIG.INJECT_FIELD] = note;
     $done({ body: JSON.stringify(obj) });
-  });
+  } else {
+    $done({});
+  }
 }
 
-// 调慢慢买历史价格接口（QX 的 $httpClient 支持在响应脚本里发请求）
-function fetchHistoryPrice(skuId, cb) {
-  var url = CONFIG.PRICE_API_TEMPLATE + skuId;
-  log("请求慢慢买: " + url);
+// 从 wareBusiness 响应里尽力找 skuId（路径以实际抓包为准，先多试几个）
+function findSku(o) {
+  var paths = [
+    "wareInfo.skuId", "wareInfo.wareId", "data.wareInfo.skuId", "data.wareInfo.wareId",
+    "item.skuId", "skuId", "wareId", "sku", "basicInfo.skuId", "data.basicInfo.skuId",
+  ];
+  for (var i = 0; i < paths.length; i++) {
+    var v = getPath(o, paths[i]);
+    if (v !== undefined && v !== null && v !== "") return String(v);
+  }
+  return "";
+}
 
-  $httpClient.get({
-    url: url,
-    headers: {
-      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-      "Cookie": CONFIG.MANMANBU_COOKIE,
-    },
-  }, function (err, resp, data) {
-    if (err || (resp && resp.statusCode !== 200)) {
-      log("慢慢买请求失败: " + (err || (resp && resp.statusCode)));
-      cb(null);
-      return;
-    }
-    // TODO(待抓包确认): 解析慢慢买返回里的 最低价/最高价/均价
-    // 形如 { low: "xx", high: "xx", avg: "xx" }，解析失败传 null
-    try {
-      var j = JSON.parse(data);
-      cb({
-        low: j.low || "",
-        high: j.high || "",
-        avg: j.avg || "",
-      });
-    } catch (e) {
-      log("慢慢买返回非 JSON（前 200 字符）: " + String(data).substring(0, 200));
-      cb(null);
-    }
-  });
+function getPath(o, path) {
+  var parts = path.split(".");
+  var cur = o;
+  for (var i = 0; i < parts.length; i++) {
+    if (cur === null || typeof cur !== "object") return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
 }
 
 // 拼比价文案
-function buildNote(price, hist) {
-  if (!hist) {
-    return "当前价 " + price + "（比价数据不可用）";
+function buildNote(item) {
+  var lines = [];
+  if (item.rows) {
+    item.rows.forEach(function (r) {
+      var s = r.label + " " + r.price;
+      if (r.date) s += " @" + r.date;
+      if (r.diff) s += " (" + r.diff + ")";
+      if (r.tip) s += " ·" + r.tip;
+      lines.push(s);
+    });
   }
-  var parts = ["当前价 " + price];
-  if (hist.low) parts.push("历史最低 " + hist.low);
-  if (hist.high) parts.push("最高 " + hist.high);
-  if (hist.avg) parts.push("均价 " + hist.avg);
-  return parts.join(" ｜ ");
+  if (item.lowestPrice) lines.push("历史最低 " + item.lowestPrice + (item.lowestDate ? " @" + item.lowestDate : ""));
+  if (item.status) lines.push("状态 " + item.status);
+  if (item.advice) lines.push("建议 " + item.advice + (item.expectPrice ? "（期望到手价 " + item.expectPrice + "）" : ""));
+  return lines.join(" ｜ ");
 }
