@@ -31,6 +31,26 @@ function log() {
   console.log("[骑士餐厅-请求] " + Array.prototype.join.call(arguments, " "));
 }
 
+// ── 环境诊断：先打印关键信息，用于定位 body 为空的真实原因 ──
+var method = ($request.method || "?").toUpperCase();
+var hdrs = $request.headers || {};
+var hKeys = [];
+try { hKeys = Object.keys(hdrs); } catch (e) {}
+
+log("---- 诊断 ----");
+log("method      : " + method);
+log("body 类型   : " + (typeof $request.body));
+log("body 长度   : " + ($request.body ? $request.body.length : 0));
+["content-type", "content-length", "content-encoding", "transfer-encoding"].forEach(function (k) {
+  for (var i = 0; i < hKeys.length; i++) {
+    if (String(hKeys[i]).toLowerCase() === k) {
+      log("hdr " + k + " : " + hdrs[hKeys[i]]);
+    }
+  }
+});
+log("header 总数 : " + hKeys.length);
+log("--------------");
+
 // 开关：URL 带 __norq=0 时不改写
 if (/[?&]__norq=0/.test($request.url)) {
   log("检测到 __norq=0，跳过请求改写");
@@ -59,10 +79,16 @@ if (/[?&]__norq=0/.test($request.url)) {
 
   if (!ok || !obj || typeof obj !== "object" || !obj.cipher) {
     log("★ 未改写：" + failReason);
-    log("  body 长度=" + (body ? body.length : 0));
-    log("  body 前 200 字符=" + (body ? String(body).substring(0, 200) : "(空)"));
-    log("  【排查】conf 须用 script-request-body 关键字（不加 requires-body）");
-    log("  【排查】MITM 域名需含 color.imdada.cn，证书要完全信任");
+    if (!body || body === "") {
+      log("  body 为空的可能原因：");
+      log("   a) 这是 OPTIONS 预检请求（无 body）→ 属正常，直接放行");
+      log("   b) Content-Length 为 0 或缺失 → 该请求本就没 body");
+      log("   c) 请求体 chunked/gzip → QX 可能读不到");
+      log("   d) HTTPS MITM 未完全生效 → 只看到 CONNECT 隧道");
+      log("   e) 该接口实际以 GET 发出（抓包记为 POST，建议复核）");
+    } else {
+      log("  body 前 200 字符=" + String(body).substring(0, 200));
+    }
     $done($request);
   } else {
     var c = obj.cipher;
