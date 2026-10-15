@@ -39,15 +39,29 @@ if (/[?&]__norq=0/.test($request.url)) {
   var body = $request.body;
   var obj = null;
   var ok = true;
+  var failReason = "";
 
-  try {
-    obj = JSON.parse(body);
-  } catch (e) {
+  if (!body || body === "") {
+    failReason = "$request.body 为空";
+  } else {
+    try {
+      obj = JSON.parse(body);
+    } catch (e) {
+      ok = false;
+      failReason = "JSON 解析失败: " + (e && e.message);
+    }
+  }
+
+  if (obj && typeof obj === "object" && !obj.cipher) {
     ok = false;
+    failReason = "有 JSON 但无 cipher 字段（顶层键: " + Object.keys(obj).join(",") + "）";
   }
 
   if (!ok || !obj || typeof obj !== "object" || !obj.cipher) {
-    log("请求体不是预期格式（无 cipher 字段），不改动");
+    log("★ 未改写：" + failReason);
+    log("  body 长度=" + (body ? body.length : 0));
+    log("  body 前 200 字符=" + (body ? String(body).substring(0, 200) : "(空)"));
+    log("  若 body 为空 → conf 规则缺 request-body 关键字，或 QX 未开启 MITM");
     $done({});
   } else {
     var c = obj.cipher;
