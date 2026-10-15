@@ -1,18 +1,21 @@
 // ============================================================
 // 京东APP · 商品详情页比价（查表版）
-// 目标接口: https://api.m.jd.com/client.action?functionId=sku_interp_title
+// 触发接口: https://api.m.jd.com/client.action（全部 functionId）
 //
 // 背景（抓包实证，2026-10-15）：
 //   1. 京东核心商品接口（带价格那个，wareBusiness 等）做了 SSL 证书固定，
 //      抓包完全看不到明文 → 原生价格响应无法注入。
-//   2. 但进详情页时 sku_interp_title（AI 标题解读）这条请求【未固定、抓得到】，
-//      且响应里嵌套着 skuId：data[].ai_info[].sku_list[].skuId（顶层也有 ai_info）。
+//   2. api.m.jd.com 未固定、抓得到；sku_interp_title 响应里嵌套 skuId
+//      （data[].ai_info[].sku_list[].skuId，顶层也有 ai_info），
+//      但该 AI 接口重复进入会返回空数据 → 不能只依赖它一个。
+//      因此改为拦截【全部 api.m.jd.com/client.action】，递归找商品号，
+//      哪个响应带了盯着的 sku 就动作，覆盖面最大。
 //   3. 慢慢买 priceRemark 的 sign/token 与请求参数绑定，无法现算任意商品，
 //      故用【按 skuId 查表】。每盯一个商品，抓一次慢慢买响应，固化到 TRACKED。
 //
 // 流程：
-//   1. 拦截 sku_interp_title 响应 → 深层取出 skuId
-//   2. TRACKED 命中 → 弹 QX 通知（必现）
+//   1. 拦截 api.m.jd.com/client.action 响应 → 递归取出 skuId
+//   2. TRACKED 命中 → 弹 QX 通知（必现，60s 去重）
 //       + 可选：把比价伪装成一条 AI 卡片塞进 ai_info，尝试渲染在标题下方
 //   3. 未命中 → 原样放行
 //
@@ -47,6 +50,9 @@ const CONFIG = {
   // 是否尝试把比价伪装成一条 AI 卡片塞进 ai_info（可能渲染在标题下方那节）。
   // 若 APP 不接受改动的响应导致异常，改成 false 只留通知。
   INJECT_AI: true,
+
+  // 同一商品两次动作的最小间隔（毫秒），防重复弹/重复插卡片
+  DEDUP_MS: 60000,
 };
 
 function log() {
@@ -83,6 +89,13 @@ function main() {
 
   var item = CONFIG.TRACKED[skuId];
   var note = buildNote(item);
+
+  // 60s 去重：同一商品短时间内不重复弹/重复插，避免 spam
+  if (!shouldAct(skuId)) {
+    log("命中但 60s 内已处理过，跳过 (" + skuId + ")");
+    $done({});
+    return;
+  }
   log("命中 -> " + note);
 
   if (CONFIG.POST_NOTIFY) {
@@ -103,8 +116,19 @@ function main() {
   }
 }
 
-// 从 sku_interp_title 响应里深层找 skuId
-// 结构：data[].ai_info[].sku_list[].skuId ；顶层 ai_info[].sku_list[].skuId
+// 60s 去重：用 $prefs 持久化记录上次动作时间
+function shouldAct(skuId) {
+  var k = "jd_price_act_" + skuId;
+  var now = Date.now();
+  try {
+    var last = $prefs.get(k) ? parseInt($prefs.get(k)) : 0;
+    if (now - last < CONFIG.DEDUP_MS) return false;
+    $prefs.set(k, String(now));
+  } catch (e) {}
+  return true;
+}
+
+// 从响应里递归找 skuId（sku_interp_title 等在 data[].ai_info[].sku_list[].skuId 等深层）
 function findSku(o) {
   var found = [];
   collectSku(o, found);
