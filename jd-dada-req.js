@@ -61,7 +61,8 @@ if (/[?&]__norq=0/.test($request.url)) {
     log("★ 未改写：" + failReason);
     log("  body 长度=" + (body ? body.length : 0));
     log("  body 前 200 字符=" + (body ? String(body).substring(0, 200) : "(空)"));
-    log("  若 body 为空 → conf 规则缺 request-body 关键字，或 QX 未开启 MITM");
+    log("  【排查】conf 规则末尾必须有 requires-body=true");
+    log("  【排查】MITM 域名需含 color.imdada.cn，证书要完全信任");
     $done({});
   } else {
     var c = obj.cipher;
