@@ -34,7 +34,7 @@ function log() {
 // 开关：URL 带 __norq=0 时不改写
 if (/[?&]__norq=0/.test($request.url)) {
   log("检测到 __norq=0，跳过请求改写");
-  $done({});
+  $done($request);
 } else {
   var body = $request.body;
   var obj = null;
@@ -61,9 +61,9 @@ if (/[?&]__norq=0/.test($request.url)) {
     log("★ 未改写：" + failReason);
     log("  body 长度=" + (body ? body.length : 0));
     log("  body 前 200 字符=" + (body ? String(body).substring(0, 200) : "(空)"));
-    log("  【排查】conf 规则末尾必须有 requires-body=true");
+    log("  【排查】conf 须用 script-request-body 关键字（不加 requires-body）");
     log("  【排查】MITM 域名需含 color.imdada.cn，证书要完全信任");
-    $done({});
+    $done($request);
   } else {
     var c = obj.cipher;
     var beforeCity = c["City-Id"];
@@ -86,6 +86,9 @@ if (/[?&]__norq=0/.test($request.url)) {
     log("Lat/Lng : (" + (beforeLat || "") + "," + (beforeLng || "") + ") -> (空)");
     log("ts      : -> " + obj.ts);
 
-    $done({ body: JSON.stringify(obj) });
+    // 请求体脚本的正确输出方式：改 $request.body 后 $done($request)
+    // （$done({body}) 是响应体脚本的写法，请求体脚本用错会导致 body 读不到）
+    $request.body = JSON.stringify(obj);
+    $done($request);
   }
 }
